@@ -6,6 +6,14 @@
 - `jalms-pocketbase/` — PocketBase migrations and hooks. The local `pb_data/` directory and PocketBase binary are not repository files.
 - `scripts/` — Repository-level checks, including the secret scanner.
 
+## Repository and push target
+
+- Canonical repository: `https://github.com/rafifgpt21-ai/jalms-pb.git`.
+- Default branch: `main`; the configured remote is `origin`.
+- Only push when the user explicitly requests it.
+- Before pushing, verify `git remote -v`, confirm the intended branch, and run `node scripts/security-scan.mjs`.
+- If `origin` points somewhere else, do not change it silently; ask the user before pushing or changing remotes.
+
 ## Development workflow
 
 Run application commands from `jalms-codebase/`:
