@@ -1,0 +1,738 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  SUBJECT_TEACHER
+  HOMEROOM_TEACHER
+  STUDENT
+  PARENT
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+  SKIPPED
+  PENDING
+}
+
+enum ClassColor {
+  RED
+  ORANGE
+  AMBER
+  EMERALD
+  TEAL
+  CYAN
+  BLUE
+  INDIGO
+  VIOLET
+  PURPLE
+  PINK
+  ROSE
+}
+
+enum UiDensity {
+  COMPACT
+  COMFORTABLE
+}
+
+enum ThemePreference {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
+enum CourseRoleContext {
+  TEACHER
+  STUDENT
+}
+
+enum CourseEnrollmentMode {
+  MANUAL
+  CLASS_SEEDED
+  CLASS_SYNC
+}
+
+enum CourseEnrollmentSource {
+  LEGACY
+  MANUAL
+  CLASS_SEED
+  CLASS_SYNC
+  IMPORT
+  ROLLOVER
+}
+
+enum ClassEnrollmentSource {
+  LEGACY
+  MANUAL
+  IMPORT
+  COPY
+  ROLLOVER
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum RolloverStatus {
+  DRAFT
+  VALIDATING
+  READY
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+model User {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  nickname     String?
+  email        String    @unique
+  password     String?
+  image        String?
+  avatarConfig Json?
+  roles        Role[]    @default([STUDENT])
+  lastLoginAt  DateTime?
+
+  isActive Boolean @default(true)
+
+  // Specific IDs
+  nip  String? // For teachers
+  nis  String? // For students
+  nisn String? // For students
+
+  officialId     String? // Deprecated in favor of specific IDs above
+  creationSource String  @default("manual") // "manual" or "excel_import"
+
+  // Relations
+  taughtCourses     Course[]     @relation("SubjectTeacher")
+  enrolledCourses   Course[]     @relation("CourseStudents", fields: [enrolledCourseIds], references: [id])
+  enrolledCourseIds String[]     @db.ObjectId
+  homeroomClasses   Class[]      @relation("HomeroomTeacher")
+  enrollments       Enrollment[]
+  submissions       Submission[]
+  attendances       Attendance[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  materials       Material[]       @relation("TeacherMaterials")
+  materialFolders MaterialFolder[] @relation("TeacherMaterialFolders")
+  quizzes         Quiz[]           @relation("TeacherQuizzes")
+  quizFolders     QuizFolder[]     @relation("TeacherQuizFolders")
+
+  conversations   Conversation[] @relation(fields: [conversationIds], references: [id])
+  conversationIds String[]       @db.ObjectId
+  messages        Message[]
+
+  reportCards ReportCard[]
+
+  courseEnrollments     CourseEnrollment[]
+  courseNavigationState CourseNavigationState[]
+  courseAnnouncements   CourseAnnouncement[]     @relation("CourseAnnouncementAuthor")
+  courseChatMessages    CourseChatMessage[]       @relation("CourseChatMessageSender")
+  workspacePreference   UserWorkspacePreference?
+}
+
+model AcademicYear {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String // "2024/2025"
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(false)
+
+  terms Term[]
+
+  deletedAt DateTime?
+}
+
+enum SemesterType {
+  ODD
+  EVEN
+}
+
+enum GradeLevel {
+  GRADE_7
+  GRADE_8
+  GRADE_9
+  GRADE_10
+  GRADE_11
+  GRADE_12
+}
+
+model Term {
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  type      SemesterType // ODD or EVEN
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean      @default(false)
+
+  academicYearId String       @db.ObjectId
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  courses     Course[]
+  classes     Class[]
+  reportCards ReportCard[]
+
+  deletedAt DateTime?
+}
+
+model Class {
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  name   String // "10 Science A"
+  termId String @db.ObjectId
+  term   Term   @relation(fields: [termId], references: [id])
+
+  homeroomTeacherId String? @db.ObjectId
+  homeroomTeacher   User?   @relation("HomeroomTeacher", fields: [homeroomTeacherId], references: [id])
+
+  students Enrollment[]
+  courses  Course[]
+
+  reportCards ReportCard[]
+
+  color      ClassColor?
+  gradeLevel GradeLevel
+  createdAt  DateTime?   @default(now())
+  updatedAt  DateTime?   @updatedAt
+
+  deletedAt DateTime?
+
+  @@index([termId, gradeLevel])
+}
+
+enum AcademicDomain {
+  SCIENCE_TECHNOLOGY
+  SOCIAL_HUMANITIES
+  LANGUAGE_COMMUNICATION
+  ARTS_CREATIVITY
+  PHYSICAL_EDUCATION
+  SPIRITUALITY_ETHICS
+}
+
+model Subject {
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  name        String // "Biology"
+  code        String  @unique // Exactly three uppercase letters, e.g. "BIO"
+  description String?
+  reportName  String? // Name to show in student reports if this subject is used
+
+  academicDomains AcademicDomain[]
+
+  courses Course[]
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  deletedAt DateTime?
+}
+
+model Course {
+  id         String  @id @default(auto()) @map("_id") @db.ObjectId
+  name       String
+  reportName String? // Name to show in student reports
+
+  // Optional link to Subject if needed later, but user wants simple name input
+  subjectId String?  @db.ObjectId
+  subject   Subject? @relation(fields: [subjectId], references: [id])
+
+  // Optional link to Class if needed
+  classId String? @db.ObjectId
+  class   Class?  @relation(fields: [classId], references: [id])
+
+  termId String @db.ObjectId
+  term   Term   @relation(fields: [termId], references: [id])
+
+  teacherId String @db.ObjectId
+  teacher   User   @relation("SubjectTeacher", fields: [teacherId], references: [id])
+
+  // Direct student enrollment
+  students   User[]   @relation("CourseStudents", fields: [studentIds], references: [id])
+  studentIds String[] @db.ObjectId
+
+  courseEnrollments CourseEnrollment[]
+
+  assignments Assignment[]
+  attendances Attendance[]
+
+  attendancePoolScore Int @default(0)
+
+  deletedAt DateTime?
+
+  schedules           Schedule[]
+  materials           Material[] // Keep this for backward compatibility or direct access if needed, but assignments are preferred
+  materialAssignments MaterialAssignment[]
+
+  competencyRules Json? // List of { grade: "A", min: 90, max: 100, description: "..." }
+
+  iconImageUrl String?
+  iconImageKey String?
+
+  // Nullable while legacy courses are backfilled; null resolves as MANUAL.
+  enrollmentMode          CourseEnrollmentMode?
+  lastEnrollmentSyncAt    DateTime?
+  lastEnrollmentSyncError String?
+
+  navigationStates CourseNavigationState[]
+  announcements    CourseAnnouncement[]
+  chatMessages     CourseChatMessage[]
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime? @updatedAt
+
+  @@index([termId])
+  @@index([teacherId, termId])
+  @@index([subjectId])
+  @@index([classId])
+  @@index([studentIds])
+}
+
+model Material {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  description String?
+  fileUrl     String?
+  linkUrl     String?
+  uploadedAt  DateTime @default(now())
+
+  // Owner of the material
+  teacherId String @db.ObjectId
+  teacher   User   @relation("TeacherMaterials", fields: [teacherId], references: [id])
+
+  // Optional link to Course (deprecated or for specific single-use)
+  courseId String? @db.ObjectId
+  course   Course? @relation(fields: [courseId], references: [id])
+
+  materialType String? @default("FILE") // Start optional, "FILE", "LINK", "HYBRID"
+
+  // Optional private organization inside the owning teacher's library.
+  folderId String?         @db.ObjectId
+  folder   MaterialFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  assignments MaterialAssignment[]
+
+  deletedAt DateTime?
+}
+
+model MaterialFolder {
+  id    String @id @default(auto()) @map("_id") @db.ObjectId
+  name  String
+  color String @default("indigo")
+
+  teacherId String @db.ObjectId
+  teacher   User   @relation("TeacherMaterialFolders", fields: [teacherId], references: [id])
+
+  materials Material[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([teacherId, name])
+  @@index([teacherId])
+}
+
+model MaterialAssignment {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  materialId String   @db.ObjectId
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  courseId String @db.ObjectId
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@unique([materialId, courseId])
+}
+
+model Schedule {
+  id        String @id @default(auto()) @map("_id") @db.ObjectId
+  dayOfWeek Int // 0=Sunday, 1=Monday, ... 6=Saturday
+  period    Int // 1-6
+
+  courseId String @db.ObjectId
+  course   Course @relation(fields: [courseId], references: [id])
+
+  deletedAt DateTime?
+
+  @@index([dayOfWeek, courseId])
+}
+
+model Enrollment {
+  id        String @id @default(auto()) @map("_id") @db.ObjectId
+  studentId String @db.ObjectId
+  student   User   @relation(fields: [studentId], references: [id])
+
+  classId String @db.ObjectId
+  class   Class  @relation(fields: [classId], references: [id])
+
+  deletedAt DateTime?
+
+  source      ClassEnrollmentSource? @default(MANUAL)
+  createdById String?                @db.ObjectId
+  createdAt   DateTime?              @default(now())
+  updatedAt   DateTime?              @updatedAt
+
+  @@unique([studentId, classId])
+  @@index([classId])
+}
+
+model CourseEnrollment {
+  id        String @id @default(auto()) @map("_id") @db.ObjectId
+  courseId  String @db.ObjectId
+  course    Course @relation(fields: [courseId], references: [id])
+  studentId String @db.ObjectId
+  student   User   @relation(fields: [studentId], references: [id])
+
+  source        CourseEnrollmentSource
+  sourceClassId String?                @db.ObjectId
+  createdById   String?                @db.ObjectId
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  deletedAt     DateTime?
+
+  @@unique([courseId, studentId])
+  @@index([studentId])
+  @@index([sourceClassId])
+}
+
+enum AssignmentType {
+  SUBMISSION
+  NON_SUBMISSION
+  QUIZ
+}
+
+model Assignment {
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  title         String
+  description   String?
+  dueDate       DateTime
+  type          AssignmentType @default(SUBMISSION)
+  maxPoints     Int            @default(100)
+  isExtraCredit Boolean        @default(false)
+  latePenalty   Int            @default(0) // Percentage 0-100
+
+  academicDomains AcademicDomain[]
+
+  courseId String @db.ObjectId
+  course   Course @relation(fields: [courseId], references: [id])
+
+  submissions Submission[]
+
+  quizId String? @db.ObjectId
+  quiz   Quiz?   @relation(fields: [quizId], references: [id])
+
+  showGradeAfterSubmission Boolean @default(true)
+
+  status ContentStatus? @default(PUBLISHED)
+
+  deletedAt DateTime?
+
+  @@index([courseId, dueDate])
+}
+
+model UserWorkspacePreference {
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @unique @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id])
+
+  density                 UiDensity       @default(COMPACT)
+  theme                   ThemePreference @default(SYSTEM)
+  channelSidebarCollapsed Boolean         @default(false)
+  teachingCourseOrder     String[]        @db.ObjectId
+  enrolledCourseOrder     String[]        @db.ObjectId
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CourseNavigationState {
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
+  userId   String @db.ObjectId
+  user     User   @relation(fields: [userId], references: [id])
+  courseId String @db.ObjectId
+  course   Course @relation(fields: [courseId], references: [id])
+
+  roleContext            CourseRoleContext
+  lastSectionKey         String            @default("overview")
+  lastSeenAnnouncementAt DateTime?
+  lastSeenChatAt         DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  @@unique([userId, courseId, roleContext])
+  @@index([courseId])
+}
+
+model CourseAnnouncement {
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
+  courseId String @db.ObjectId
+  course   Course @relation(fields: [courseId], references: [id])
+  authorId String @db.ObjectId
+  author   User   @relation("CourseAnnouncementAuthor", fields: [authorId], references: [id])
+
+  title       String
+  body        String
+  isPinned    Boolean       @default(false)
+  status      ContentStatus @default(PUBLISHED)
+  publishedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  @@index([courseId, publishedAt])
+  @@index([authorId])
+}
+
+model CourseChatMessage {
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
+  courseId String @db.ObjectId
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  senderId String @db.ObjectId
+  sender   User   @relation("CourseChatMessageSender", fields: [senderId], references: [id])
+
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([courseId, createdAt])
+  @@index([senderId])
+}
+
+model AcademicRollover {
+  id           String                 @id @default(auto()) @map("_id") @db.ObjectId
+  sourceTermId String                 @db.ObjectId
+  targetTermId String                 @db.ObjectId
+  actorId      String                 @db.ObjectId
+  status       RolloverStatus         @default(DRAFT)
+  options      Json
+  mappings     Json
+  summary      Json?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  items        AcademicRolloverItem[]
+
+  @@index([actorId, createdAt])
+}
+
+model AcademicRolloverItem {
+  id         String           @id @default(auto()) @map("_id") @db.ObjectId
+  rolloverId String           @db.ObjectId
+  rollover   AcademicRollover @relation(fields: [rolloverId], references: [id])
+  entityType String
+  sourceId   String?          @db.ObjectId
+  targetId   String?          @db.ObjectId
+  status     String
+  error      String?
+  result     Json?
+  updatedAt  DateTime         @updatedAt
+
+  @@index([rolloverId, status])
+}
+
+model ManagementAuditLog {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  actorId    String   @db.ObjectId
+  entityType String
+  entityId   String   @db.ObjectId
+  action     String
+  before     Json?
+  after      Json?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model Submission {
+  id           String     @id @default(auto()) @map("_id") @db.ObjectId
+  assignmentId String     @db.ObjectId
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+
+  studentId String @db.ObjectId
+  student   User   @relation(fields: [studentId], references: [id])
+
+  grade         Float?
+  feedback      String?
+  submissionUrl String?
+  attachmentUrl String?
+  link          String?
+  submittedAt   DateTime @default(now())
+
+  deletedAt DateTime?
+
+  @@index([studentId, assignmentId])
+  @@index([assignmentId, submittedAt])
+}
+
+model Attendance {
+  id           String           @id @default(auto()) @map("_id") @db.ObjectId
+  date         DateTime
+  status       AttendanceStatus
+  topic        String?
+  excuseReason String?
+  period       Int              @default(1)
+
+  courseId String @db.ObjectId
+  course   Course @relation(fields: [courseId], references: [id])
+
+  studentId String @db.ObjectId
+  // No direct relation to User to keep it lightweight, but can be added if needed.
+  // Actually, for integrity, let's add it.
+  student   User   @relation(fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  // Added NoAction to avoid cycles or complexity with MongoDB, though Prisma handles it well.
+
+  deletedAt DateTime?
+
+  @@index([studentId, date])
+  @@index([courseId])
+  @@index([date, status])
+}
+
+model Conversation {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participantIds String[] @db.ObjectId
+  participants   User[]   @relation(fields: [participantIds], references: [id])
+
+  messages Message[]
+
+  lastMessageAt DateTime @default(now())
+
+  initiatorId String? @db.ObjectId
+}
+
+model Message {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  content   String
+  createdAt DateTime @default(now())
+
+  conversationId String       @db.ObjectId
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  senderId String @db.ObjectId
+  sender   User   @relation(fields: [senderId], references: [id])
+
+  readByIds String[] @db.ObjectId // For read receipts if needed later
+}
+
+enum QuizGradingType {
+  ALL_OR_NOTHING
+  RIGHT_MINUS_WRONG
+}
+
+model Quiz {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  description String?
+  teacherId   String   @db.ObjectId
+  teacher     User     @relation("TeacherQuizzes", fields: [teacherId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questions   QuizQuestion[]
+  assignments Assignment[]
+
+  randomizeChoices Boolean @default(false)
+
+  // Optional private organization inside the owning teacher's library.
+  folderId String?     @db.ObjectId
+  folder   QuizFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  deletedAt DateTime?
+}
+
+model QuizFolder {
+  id    String @id @default(auto()) @map("_id") @db.ObjectId
+  name  String
+  color String @default("indigo")
+
+  teacherId String @db.ObjectId
+  teacher   User   @relation("TeacherQuizFolders", fields: [teacherId], references: [id])
+
+  quizzes   Quiz[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, name])
+  @@index([teacherId])
+}
+
+model QuizQuestion {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  text       String
+  imageUrl   String?
+  audioUrl   String?
+  audioLimit Int     @default(0) // 0 = unlimited
+  order      Int     @default(0)
+
+  points      Int             @default(1)
+  gradingType QuizGradingType @default(ALL_OR_NOTHING)
+  explanation String?
+
+  quizId String @db.ObjectId
+  quiz   Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  choices QuizChoice[]
+}
+
+model QuizChoice {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  text      String
+  imageUrl  String?
+  isCorrect Boolean @default(false)
+  order     Int     @default(0)
+
+  questionId String       @db.ObjectId
+  question   QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
+
+model ReportCard {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  studentId String @db.ObjectId
+  student   User   @relation(fields: [studentId], references: [id])
+
+  classId String @db.ObjectId
+  class   Class  @relation(fields: [classId], references: [id])
+
+  termId String @db.ObjectId
+  term   Term   @relation(fields: [termId], references: [id])
+
+  // Snapshots
+  courseGrades     Json[] // { subject: string, score: number, grade: string, competency: string }
+  extracurriculars Json[] // { activity: string, predicate: string, note: string }
+  achievements     Json[] // { name: string, note: string }
+  development      Json[] // { activity: string, note: string }
+  attendance       Json // { sick: number, excused: number, alpha: number }
+
+  homeroomTeacherNote String?
+  principalName       String?
+
+  date      DateTime @default(now())
+  published Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, classId, termId])
+}
+
+model SystemConfig {
+  id    String @id @map("_id") // key like "grading_scale"
+  value Json
+}

@@ -1,0 +1,62 @@
+# OS, editor and local tooling
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.agents/
+
+# Environment files and credentials
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/credentials*.json
+**/*credentials*.json
+
+# Node/Next.js generated files
+**/node_modules/
+**/.next/
+**/out/
+**/build/
+**/dist/
+**/coverage/
+**/.turbo/
+**/*.tsbuildinfo
+**/next-env.d.ts
+
+# Local logs, reports, dumps and temporary files
+**/*.log
+**/*.log.*
+**/*-log.txt
+**/*_log.txt
+**/build*.txt
+**/error*.txt
+**/tsc*.txt
+**/migration-report.json
+**/test.txt
+**/*.bak
+
+# Local databases, uploads and generated user data
+**/pb_data/
+**/uploads/
+**/files/
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite3
+**/backups/
+
+# Bundled/runtime binaries should be downloaded or built separately
+**/*.exe
+**/pocketbase
+
+# One-off diagnostics that can print local records or mutate a local DB
+/jalms-codebase/debug-*.js
+/jalms-codebase/inspect-dicebear.js
+/jalms-codebase/check-db.ts
+/jalms-codebase/scripts/debug-*
+/jalms-codebase/scripts/check-users-dump.ts
+/jalms-codebase/scripts/test-db-write.ts
